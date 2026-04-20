@@ -35,8 +35,14 @@
             <p class="info-text">
               💡 点击下方按钮生成分享链接，其他人打开链接即可查看您的网红数据
             </p>
-            <p class="warning-text">
-              ⚠️ 注意：数据会编码在URL中，如果数据量过大可能导致链接过长
+            <p class="warning-text" v-if="isLocalhost">
+              ⚠️ 检测到您正在使用本地地址 (localhost)，生成的链接只能在您的电脑上访问
+            </p>
+            <p class="solution-text" v-if="isLocalhost">
+              📌 <strong>推荐方案：</strong>切换到「文件导出」标签页，导出为CSV或JSON文件分享给他人
+            </p>
+            <p class="info-text" v-else>
+              ✨ 已启用数据压缩，链接更短更易分享
             </p>
           </div>
 
@@ -146,6 +152,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import QrcodeVue from 'qrcode.vue'
+import pako from 'pako'
 import { exportToCSV, exportToJSON } from '../utils/helpers.js'
 
 const props = defineProps({
@@ -174,27 +181,63 @@ const estimatedLength = computed(() => {
   return `${(len / 10000).toFixed(1)}W 字符`
 })
 
+// 检测是否为本地地址
+const isLocalhost = computed(() => {
+  const hostname = window.location.hostname
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+})
+
 // 生成分享链接
 const generateShareLink = () => {
   try {
-    // 准备要分享的数据
+    // 准备要分享的数据（只保留必要字段，减少数据量）
     const shareData = {
-      influencers: props.influencers,
+      influencers: props.influencers.map(inf => ({
+        id: inf.id,
+        name: inf.name,
+        avatar: inf.avatar,
+        category: inf.category,
+        followers: inf.followers,
+        description: inf.description,
+        tags: inf.tags,
+        douyinId: inf.douyinId,
+        videos: inf.videos,
+        likes: inf.likes,
+        bio: inf.bio,
+        isFavorite: inf.isFavorite,
+        note: inf.note,
+        noteUpdatedAt: inf.noteUpdatedAt
+      })),
       categories: props.categories.filter(c => c.id !== 'all'),
       timestamp: new Date().toISOString(),
-      version: '1.0'
+      version: '2.0'  // 升级版本号，表示使用压缩
     }
 
-    // 转换为 JSON 并压缩
+    // 转换为 JSON
     const jsonString = JSON.stringify(shareData)
-    const encoded = btoa(unescape(encodeURIComponent(jsonString)))
+    
+    // 使用 pako 压缩数据
+    const compressed = pako.deflate(jsonString, { to: 'string' })
+    
+    // Base64 编码（使用 URL 安全的 base64url）
+    const encoded = btoa(compressed)
+      .replace(/\+/g, '-')  // + -> -
+      .replace(/\//g, '_')  // / -> _
+      .replace(/=/g, '')    // 移除填充 =
     
     // 生成完整URL
     const baseUrl = window.location.origin + window.location.pathname
-    shareUrl.value = `${baseUrl}?data=${encoded}`
+    shareUrl.value = `${baseUrl}?d=${encoded}`  // 使用更短的参数名 d
+    
+    // 计算压缩率
+    const originalSize = jsonString.length
+    const compressedSize = encoded.length
+    const compressionRatio = ((1 - compressedSize / originalSize) * 100).toFixed(1)
+    
+    console.log(`压缩前: ${originalSize} 字符, 压缩后: ${compressedSize} 字符, 压缩率: ${compressionRatio}%`)
     
     // 显示成功提示
-    alert('✅ 分享链接生成成功！\n\n您可以复制链接或切换到二维码标签页')
+    alert(`✅ 分享链接生成成功！\n\n压缩率: ${compressionRatio}%\n链接长度: ${compressedSize} 字符\n\n您可以复制链接或切换到二维码标签页`)
   } catch (error) {
     console.error('生成分享链接失败:', error)
     alert('❌ 生成链接失败，数据可能过大\n\n建议使用文件导出方式分享')

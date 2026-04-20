@@ -411,6 +411,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import pako from 'pako'
 import { influencers as initialInfluencers, categories as initialCategories } from './data/influencers.js'
 import InfluencerCard from './components/InfluencerCard.vue'
 import InfluencerDetail from './components/InfluencerDetail.vue'
@@ -1106,20 +1107,47 @@ onMounted(() => {
 const loadSharedData = () => {
   try {
     const urlParams = new URLSearchParams(window.location.search)
-    const shareData = urlParams.get('data')
     
-    if (shareData) {
-      // 解码数据
-      const jsonString = decodeURIComponent(escape(atob(shareData)))
+    // 支持新旧两种参数名：d (压缩) 和 data (未压缩)
+    const shareDataParam = urlParams.get('d') || urlParams.get('data')
+    
+    if (shareDataParam) {
+      let jsonString
+      
+      // 检测是否使用了压缩（版本2.0）
+      if (urlParams.get('d')) {
+        // 新版：使用压缩
+        // 还原 base64url 为标准 base64
+        let base64 = shareDataParam
+          .replace(/-/g, '+')  // - -> +
+          .replace(/_/g, '/')  // _ -> /
+        
+        // 添加填充
+        while (base64.length % 4 !== 0) {
+          base64 += '='
+        }
+        
+        // Base64 解码
+        const compressed = atob(base64)
+        
+        // 使用 pako 解压缩
+        jsonString = pako.inflate(compressed, { to: 'string' })
+      } else {
+        // 旧版：未压缩，向后兼容
+        jsonString = decodeURIComponent(escape(atob(shareDataParam)))
+      }
+      
       const data = JSON.parse(jsonString)
       
       // 验证数据格式
       if (data.influencers && Array.isArray(data.influencers)) {
         // 显示更详细的确认信息
         const shareTime = data.timestamp ? new Date(data.timestamp).toLocaleString('zh-CN') : '未知时间'
+        const version = data.version || '1.0'
         const confirmMsg = `📥 检测到分享数据！\n\n` +
           `包含 ${data.influencers.length} 个网红\n` +
-          `分享时间：${shareTime}\n\n` +
+          `分享时间：${shareTime}\n` +
+          `数据版本：${version}\n\n` +
           `是否导入这些数据？\n` +
           `（导入后将覆盖当前所有数据）`
         
