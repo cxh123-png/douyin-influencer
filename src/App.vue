@@ -34,6 +34,9 @@
             <button class="icon-btn import-btn" @click="showImportModal = true" title="批量导入">
               <span>📥</span>
             </button>
+            <button class="icon-btn share-btn" @click="showShareModal = true" title="分享数据">
+              <span>🔗</span>
+            </button>
             <button class="icon-btn dark-mode-btn" @click="toggleDarkMode" :title="darkMode ? '切换到亮色模式' : '切换到深色模式'">
               <span>{{ darkMode ? '☀️' : '🌙' }}</span>
             </button>
@@ -79,6 +82,10 @@
         <button class="mobile-icon-btn" @click="showImportModal = true" title="导入">
           <span>📥</span>
           <span class="btn-label">导入</span>
+        </button>
+        <button class="mobile-icon-btn" @click="showShareModal = true" title="分享">
+          <span>🔗</span>
+          <span class="btn-label">分享</span>
         </button>
         <button class="mobile-icon-btn" @click="toggleDarkMode" title="主题">
           <span>{{ darkMode ? '☀️' : '🌙' }}</span>
@@ -198,6 +205,14 @@
       @apply="applyAdvancedFilter"
     />
 
+    <!-- 分享弹窗 -->
+    <ShareModal
+      v-if="showShareModal"
+      :influencers="influencers"
+      :categories="categories"
+      @close="showShareModal = false"
+    />
+
     <!-- 添加网红弹窗 -->
     <div v-if="showAddForm" class="add-modal-overlay" @click="closeAddForm">
       <div class="add-modal-content" @click.stop>
@@ -218,13 +233,39 @@
           </div>
           
           <div class="form-group">
-            <label for="avatar">头像URL</label>
-            <input 
-              id="avatar"
-              v-model="newInfluencer.avatar" 
-              type="url" 
-              placeholder="请输入头像图片链接"
-            />
+            <label for="avatar">头像</label>
+            <div class="avatar-upload-container">
+              <!-- 图片预览 -->
+              <div v-if="avatarPreview" class="avatar-preview">
+                <img :src="avatarPreview" alt="头像预览" />
+                <button type="button" class="remove-avatar-btn" @click="removeAvatar" title="移除图片">✕</button>
+              </div>
+              
+              <!-- 上传区域 -->
+              <div class="avatar-input-group">
+                <input 
+                  id="avatar"
+                  v-model="newInfluencer.avatar" 
+                  type="url" 
+                  placeholder="或输入图片链接"
+                  @input="handleAvatarUrlChange"
+                />
+                <div class="upload-divider">或</div>
+                <label for="avatarUpload" class="upload-btn">
+                  <span class="upload-icon">📷</span>
+                  <span>{{ avatarPreview ? '更换图片' : '上传图片' }}</span>
+                </label>
+                <input 
+                  id="avatarUpload"
+                  type="file" 
+                  accept="image/*"
+                  @change="handleImageUpload"
+                  style="display: none;"
+                />
+              </div>
+              
+              <p class="upload-hint">💡 支持 JPG、PNG、GIF 等格式，建议尺寸 300x300px</p>
+            </div>
           </div>
           
           <div class="form-group">
@@ -378,6 +419,7 @@ import Toast from './components/Toast.vue'
 import NoteEditor from './components/NoteEditor.vue'
 import AdvancedFilter from './components/AdvancedFilter.vue'
 import DataStats from './components/DataStats.vue'
+import ShareModal from './components/ShareModal.vue'
 import { parseCount, exportToCSV, exportToJSON } from './utils/helpers.js'
 
 const searchKeyword = ref('')
@@ -406,6 +448,7 @@ const showAdvancedFilter = ref(false)
 const advancedFilters = ref({})
 const showDataStats = ref(false)
 const showImportModal = ref(false)
+const showShareModal = ref(false) // 分享弹窗
 
 // 从 localStorage 加载数据，如果没有则使用初始数据
 const loadFromStorage = (key, defaultValue) => {
@@ -640,6 +683,7 @@ const resetForm = () => {
     bio: ''
   }
   tagsInput.value = ''
+  avatarPreview.value = '' // 清空头像预览
 }
 
 // 添加网红
@@ -685,7 +729,55 @@ const editInfluencer = (influencer) => {
   tagsInput.value = influencer.tags.join(', ')
   isEditMode.value = true
   showAddForm.value = true
+  // 设置头像预览
+  avatarPreview.value = influencer.avatar || ''
   closeDetail()
+}
+
+// 处理图片上传
+const handleImageUpload = (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  // 验证文件类型
+  if (!file.type.startsWith('image/')) {
+    if (toast.value) toast.value.error('请选择图片文件！')
+    return
+  }
+  
+  // 验证文件大小（限制为 5MB）
+  const maxSize = 5 * 1024 * 1024
+  if (file.size > maxSize) {
+    if (toast.value) toast.value.error('图片大小不能超过 5MB！')
+    return
+  }
+  
+  // 读取文件并转换为 Base64
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const base64 = e.target.result
+    newInfluencer.value.avatar = base64
+    avatarPreview.value = base64
+    if (toast.value) toast.value.success('图片上传成功！')
+  }
+  reader.onerror = () => {
+    if (toast.value) toast.value.error('图片读取失败，请重试！')
+  }
+  reader.readAsDataURL(file)
+  
+  // 清空 input，允许重复选择同一文件
+  event.target.value = ''
+}
+
+// 处理头像 URL 变化
+const handleAvatarUrlChange = () => {
+  avatarPreview.value = newInfluencer.value.avatar
+}
+
+// 移除头像
+const removeAvatar = () => {
+  newInfluencer.value.avatar = ''
+  avatarPreview.value = ''
 }
 
 // 更新网红
@@ -1005,7 +1097,53 @@ const handleKeyDown = (event) => {
 // 组件挂载时添加快捷键监听
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
+  
+  // 检查 URL 中是否有分享数据
+  loadSharedData()
 })
+
+// 加载分享数据
+const loadSharedData = () => {
+  try {
+    const urlParams = new URLSearchParams(window.location.search)
+    const shareData = urlParams.get('data')
+    
+    if (shareData) {
+      // 解码数据
+      const jsonString = decodeURIComponent(escape(atob(shareData)))
+      const data = JSON.parse(jsonString)
+      
+      // 验证数据格式
+      if (data.influencers && Array.isArray(data.influencers)) {
+        if (confirm(`📥 检测到分享数据！\n\n包含 ${data.influencers.length} 个网红\n\n是否导入这些数据？`)) {
+          // 导入网红数据
+          influencers.value = [...data.influencers]
+          
+          // 如果有分类数据，也导入
+          if (data.categories && Array.isArray(data.categories)) {
+            // 保留"全部"分类，添加其他分类
+            const allCategory = categories.value.find(c => c.id === 'all')
+            categories.value = [allCategory, ...data.categories]
+          }
+          
+          // 清除 URL 中的分享参数
+          window.history.replaceState({}, document.title, window.location.pathname)
+          
+          if (toast.value) {
+            toast.value.success(`成功导入 ${data.influencers.length} 个网红！`)
+          }
+        } else {
+          // 用户取消，清除 URL 参数
+          window.history.replaceState({}, document.title, window.location.pathname)
+        }
+      }
+    }
+  } catch (error) {
+    console.error('加载分享数据失败:', error)
+    // 如果解析失败，清除 URL 参数
+    window.history.replaceState({}, document.title, window.location.pathname)
+  }
+}
 
 // 高级筛选
 const applyAdvancedFilter = (filters) => {
@@ -1218,6 +1356,7 @@ const applyAdvancedFilter = (filters) => {
 .advanced-filter-btn,
 .stats-btn,
 .import-btn,
+.share-btn,
 .dark-mode-btn {
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
   box-shadow: 0 2px 8px rgba(79, 172, 254, 0.3);
@@ -1228,6 +1367,7 @@ const applyAdvancedFilter = (filters) => {
 .advanced-filter-btn:hover,
 .stats-btn:hover,
 .import-btn:hover,
+.share-btn:hover,
 .dark-mode-btn:hover {
   transform: scale(1.1);
   box-shadow: 0 4px 12px rgba(79, 172, 254, 0.5);
@@ -1238,6 +1378,7 @@ const applyAdvancedFilter = (filters) => {
 .advanced-filter-btn:active,
 .stats-btn:active,
 .import-btn:active,
+.share-btn:active,
 .dark-mode-btn:active {
   transform: scale(0.95);
 }
@@ -1518,6 +1659,126 @@ const applyAdvancedFilter = (filters) => {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* 头像上传容器 */
+.avatar-upload-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.avatar-preview {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  margin: 0 auto;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 4px solid #667eea;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+}
+
+.avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-avatar-btn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 71, 87, 0.9);
+  color: white;
+  border: 2px solid white;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+  padding: 0;
+}
+
+.remove-avatar-btn:hover {
+  background: #ff3344;
+  transform: scale(1.1);
+}
+
+.avatar-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.upload-divider {
+  text-align: center;
+  color: #999;
+  font-size: 0.9rem;
+  position: relative;
+}
+
+.upload-divider::before,
+.upload-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 30%;
+  height: 1px;
+  background: #e0e0e0;
+}
+
+.upload-divider::before {
+  left: 0;
+}
+
+.upload-divider::after {
+  right: 0;
+}
+
+.upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.8rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: 2px dashed transparent;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-align: center;
+}
+
+.upload-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  border-color: #667eea;
+}
+
+.upload-btn:active {
+  transform: translateY(0);
+}
+
+.upload-icon {
+  font-size: 1.3rem;
+}
+
+.upload-hint {
+  margin: 0;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #666;
+  text-align: center;
 }
 
 .form-row {
@@ -1900,6 +2161,17 @@ const applyAdvancedFilter = (filters) => {
     width: 95%;
     max-height: 95vh;
     margin: 1rem;
+  }
+  
+  /* 头像预览移动端调整 */
+  .avatar-preview {
+    width: 120px;
+    height: 120px;
+  }
+  
+  .upload-btn {
+    padding: 0.7rem 1rem;
+    font-size: 0.95rem;
   }
   
   /* 分类导航 */
