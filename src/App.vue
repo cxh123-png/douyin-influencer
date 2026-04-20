@@ -1115,7 +1115,15 @@ const loadSharedData = () => {
       
       // 验证数据格式
       if (data.influencers && Array.isArray(data.influencers)) {
-        if (confirm(`📥 检测到分享数据！\n\n包含 ${data.influencers.length} 个网红\n\n是否导入这些数据？`)) {
+        // 显示更详细的确认信息
+        const shareTime = data.timestamp ? new Date(data.timestamp).toLocaleString('zh-CN') : '未知时间'
+        const confirmMsg = `📥 检测到分享数据！\n\n` +
+          `包含 ${data.influencers.length} 个网红\n` +
+          `分享时间：${shareTime}\n\n` +
+          `是否导入这些数据？\n` +
+          `（导入后将覆盖当前所有数据）`
+        
+        if (confirm(confirmMsg)) {
           // 导入网红数据
           influencers.value = [...data.influencers]
           
@@ -1130,16 +1138,20 @@ const loadSharedData = () => {
           window.history.replaceState({}, document.title, window.location.pathname)
           
           if (toast.value) {
-            toast.value.success(`成功导入 ${data.influencers.length} 个网红！`)
+            toast.value.success(`✅ 成功导入 ${data.influencers.length} 个网红！`)
           }
         } else {
           // 用户取消，清除 URL 参数
           window.history.replaceState({}, document.title, window.location.pathname)
+          if (toast.value) {
+            toast.value.info('已取消导入')
+          }
         }
       }
     }
   } catch (error) {
     console.error('加载分享数据失败:', error)
+    alert('❌ 分享链接无效或数据已损坏\n\n请检查链接是否完整')
     // 如果解析失败，清除 URL 参数
     window.history.replaceState({}, document.title, window.location.pathname)
   }
